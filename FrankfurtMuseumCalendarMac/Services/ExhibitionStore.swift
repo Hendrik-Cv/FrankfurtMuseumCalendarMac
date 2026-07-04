@@ -9,6 +9,11 @@ final class ExhibitionStore {
     var fetchErrors: [(museum: String, message: String)] = []
     var lastUpdated: Date?
 
+    var loadedMuseumCount: Int = 0
+    var totalMuseumCount: Int = 0
+    var loadedEventMuseumCount: Int = 0
+    var totalEventMuseumCount: Int = 0
+
     enum SortOrder: String, CaseIterable {
         case startDate = "Startdatum"
         case endDate   = "Schließt bald"
@@ -131,6 +136,8 @@ final class ExhibitionStore {
         isLoading = true
         fetchErrors = []
         exhibitions = []
+        loadedMuseumCount = 0
+        totalMuseumCount = fetchers.count
 
         await withTaskGroup(of: (museum: String, exhibitions: [Exhibition], error: String?).self) { group in
             for fetcher in fetchers {
@@ -145,6 +152,7 @@ final class ExhibitionStore {
                 }
             }
             for await result in group {
+                loadedMuseumCount += 1
                 if let err = result.error {
                     if !fetchErrors.contains(where: { $0.museum == result.museum }) {
                         fetchErrors.append((museum: result.museum, message: err))
@@ -177,12 +185,17 @@ final class ExhibitionStore {
         }
         guard !isEventsLoading else { return }
         isEventsLoading = true
+        loadedEventMuseumCount = 0
+        totalEventMuseumCount = eventFetchers.count
         var fetched: [MuseumEvent] = []
         await withTaskGroup(of: [MuseumEvent].self) { group in
             for fetcher in eventFetchers {
                 group.addTask { (try? await fetcher.fetchEvents()) ?? [] }
             }
-            for await batch in group { fetched.append(contentsOf: batch) }
+            for await batch in group {
+                loadedEventMuseumCount += 1
+                fetched.append(contentsOf: batch)
+            }
         }
         selectedEventIDs = []
         events = fetched.sorted { $0.date < $1.date }

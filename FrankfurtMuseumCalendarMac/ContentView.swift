@@ -114,9 +114,25 @@ struct ContentView: View {
 
     // MARK: - Exhibition/Event List
 
+    private var loadingProgress: Double {
+        guard store.totalMuseumCount > 0 else { return 0 }
+        return Double(store.loadedMuseumCount) / Double(store.totalMuseumCount)
+    }
+
+    private var eventsLoadingProgress: Double {
+        guard store.totalEventMuseumCount > 0 else { return 0 }
+        return Double(store.loadedEventMuseumCount) / Double(store.totalEventMuseumCount)
+    }
+
     private var exhibitionList: some View {
         VStack(spacing: 0) {
-            ThinLoadingBar(isActive: store.isLoading || store.isEventsLoading)
+            if store.isLoading {
+                DeterministicLoadingBar(progress: loadingProgress, color: .accentColor)
+            } else if store.isEventsLoading {
+                DeterministicLoadingBar(progress: eventsLoadingProgress, color: .orange)
+            } else {
+                Color.clear.frame(height: 2)
+            }
 
             // P2 + P4: event filter bar
             if store.showEvents && !store.events.isEmpty {
@@ -127,10 +143,13 @@ struct ContentView: View {
 
             Group {
                 if store.isLoading && store.exhibitions.isEmpty {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Ausstellungen werden geladen…")
+                    VStack(spacing: 20) {
+                        ProgressView(value: loadingProgress)
+                            .progressViewStyle(.linear)
+                            .frame(width: 200)
+                        Text("Lade Ausstellungen \(store.loadedMuseumCount)/\(store.totalMuseumCount)…")
                             .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if searchResults.isEmpty && searchFilteredEvents.isEmpty {
@@ -141,6 +160,16 @@ struct ContentView: View {
                             ? "Drücke ⌘R um Daten zu laden."
                             : "Keine Treffer für die gewählten Filter.")
                     )
+                } else if store.isEventsLoading && store.events.isEmpty {
+                    VStack(spacing: 20) {
+                        ProgressView(value: eventsLoadingProgress)
+                            .progressViewStyle(.linear)
+                            .frame(width: 200)
+                        Text("Lade Veranstaltungen \(store.loadedEventMuseumCount)/\(store.totalEventMuseumCount)…")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List(selection: $listSelection) {
 
@@ -274,9 +303,22 @@ struct ContentView: View {
             .help("Alle exportieren")
             .disabled(store.filteredExhibitions.isEmpty)
 
-            if store.isLoading || store.isEventsLoading {
-                ProgressView()
-                    .scaleEffect(0.7)
+            if store.isLoading {
+                Label(
+                    "\(store.loadedMuseumCount)/\(store.totalMuseumCount)",
+                    systemImage: "arrow.clockwise"
+                )
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            } else if store.isEventsLoading {
+                Label(
+                    "\(store.loadedEventMuseumCount)/\(store.totalEventMuseumCount)",
+                    systemImage: "calendar.badge.clock"
+                )
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
             } else {
                 Button {
                     Task {
@@ -357,39 +399,20 @@ private struct EventFilterChip: View {
     }
 }
 
-// MARK: - Thin Loading Bar
+// MARK: - Deterministic Loading Bar
 
-private struct ThinLoadingBar: View {
-    let isActive: Bool
-    @State private var phase: CGFloat = -0.45
+private struct DeterministicLoadingBar: View {
+    let progress: Double
+    let color: Color
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [.clear, Color.accentColor.opacity(0.75), .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: w * 0.45)
-                .offset(x: phase * w)
+            color.opacity(0.75)
+                .frame(width: max(0, geo.size.width * progress))
+                .animation(.linear(duration: 0.2), value: progress)
         }
         .frame(height: 2)
-        .clipped()
-        .opacity(isActive ? 1 : 0)
-        .animation(.easeInOut(duration: 0.3), value: isActive)
-        .onAppear { if isActive { startSlide() } }
-        .onChange(of: isActive) { _, active in if active { startSlide() } }
-    }
-
-    private func startSlide() {
-        phase = -0.45
-        withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-            phase = 1.0
-        }
+        .background(color.opacity(0.12))
     }
 }
 

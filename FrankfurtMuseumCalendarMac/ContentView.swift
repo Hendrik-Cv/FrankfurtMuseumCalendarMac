@@ -181,8 +181,10 @@ struct ContentView: View {
                                 }
                                 if searchFilteredEvents.isEmpty {
                                     Text("Keine bevorstehenden Veranstaltungen")
-                                        .foregroundStyle(.secondary)
-                                        .font(.callout)
+                                        .foregroundStyle(.tertiary)
+                                        .font(.footnote)
+                                        .italic()
+                                        .padding(.vertical, 4)
                                 } else {
                                     ForEach(searchFilteredEvents) { event in
                                         EventRowView(

@@ -5,6 +5,8 @@ struct ContentView: View {
     @Environment(ExhibitionStore.self) private var store
     @Environment(ICalExporter.self) private var exporter
     @State private var searchText = ""
+    @State private var debouncedSearch = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
     @State private var listSelection: ListSelection?
     @State private var showBulkExport = false
     @State private var showEventExport = false
@@ -32,20 +34,19 @@ struct ContentView: View {
 
     var searchResults: [Exhibition] {
         let base = store.filteredExhibitions
-        guard !searchText.isEmpty else { return base }
+        guard !debouncedSearch.isEmpty else { return base }
         return base.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.museum.name.localizedCaseInsensitiveContains(searchText)
+            $0.title.localizedCaseInsensitiveContains(debouncedSearch) ||
+            $0.museum.name.localizedCaseInsensitiveContains(debouncedSearch)
         }
     }
 
-    // P6: search extended to events
     var searchFilteredEvents: [MuseumEvent] {
         let events = store.filteredEvents
-        guard !searchText.isEmpty else { return events }
+        guard !debouncedSearch.isEmpty else { return events }
         return events.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.museum.name.localizedCaseInsensitiveContains(searchText)
+            $0.title.localizedCaseInsensitiveContains(debouncedSearch) ||
+            $0.museum.name.localizedCaseInsensitiveContains(debouncedSearch)
         }
     }
 
@@ -78,6 +79,16 @@ struct ContentView: View {
             }
         }
         .searchable(text: $searchText, prompt: "Ausstellung, Veranstaltung oder Museum suchen")
+        .onChange(of: searchText) { _, new in
+            searchDebounceTask?.cancel()
+            searchDebounceTask = Task {
+                if !new.isEmpty {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                guard !Task.isCancelled else { return }
+                debouncedSearch = new
+            }
+        }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showBulkExport) {
             BulkExportSheet()
@@ -94,8 +105,10 @@ struct ContentView: View {
                 .environment(store)
         }
         .task {
-            await store.refresh()
-            if store.showEvents { await store.refreshEvents() }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await store.refresh() }
+                if store.showEvents { group.addTask { await store.refreshEvents() } }
+            }
         }
     }
 

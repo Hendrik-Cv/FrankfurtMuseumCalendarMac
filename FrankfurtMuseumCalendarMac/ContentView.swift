@@ -93,7 +93,10 @@ struct ContentView: View {
             ErrorSheet()
                 .environment(store)
         }
-        .task { await store.refresh() }
+        .task {
+            await store.refresh()
+            if store.showEvents { await store.refreshEvents() }
+        }
     }
 
     // MARK: - Exhibition/Event List
@@ -222,7 +225,7 @@ struct ContentView: View {
                 }
             }
         }
-        .navigationTitle("Frankfurt Museen")
+        .navigationTitle("Frankfurter Museumskalender")
     }
 
     // MARK: - Toolbar

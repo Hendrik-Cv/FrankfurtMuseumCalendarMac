@@ -25,7 +25,7 @@ final class ExhibitionStore {
     var showPast = false
     var sortOrder: SortOrder = .endDate
     var events: [MuseumEvent] = []
-    var showEvents = false
+    var showEvents = true
     var selectedEventIDs: Set<MuseumEvent.ID> = []
     var favoriteIDs: Set<UUID> = []
     var showOnlyFavorites = false

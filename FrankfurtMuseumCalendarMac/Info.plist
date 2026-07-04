@@ -9,7 +9,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Frankfurter Museumskalender</string>
+	<key>CFBundleDisplayName</key>
+	<string>Frankfurter Museumskalender</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,7 +25,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Frankfurt Museum Kalender möchte Ausstellungen zu deinem Kalender hinzufügen.</string>
+	<string>Frankfurter Museumskalender möchte Ausstellungen und Veranstaltungen zu deinem Kalender hinzufügen.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

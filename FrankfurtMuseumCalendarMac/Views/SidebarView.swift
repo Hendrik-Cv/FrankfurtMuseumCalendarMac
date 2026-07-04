@@ -19,15 +19,13 @@ struct SidebarView: View {
                 .tint(.yellow)
             }
 
-            Section("Ansicht") {
-                Toggle("Vergangene anzeigen", isOn: $store.showPast)
-                Toggle("Veranstaltungen", isOn: $store.showEvents)
-                    .onChange(of: store.showEvents) { _, on in
-                        if on { Task { await store.refreshEvents() } }
-                    }
+            Section("Ausstellungen") {
+                Toggle(isOn: $store.showPast) {
+                    Text("Vergangene einblenden").lineLimit(nil)
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Sortieren nach")
+                    Text("Sortierung")
                     Picker("", selection: $store.sortOrder) {
                         ForEach(ExhibitionStore.SortOrder.allCases, id: \.self) { order in
                             Text(order.rawValue).tag(order)
@@ -35,6 +33,15 @@ struct SidebarView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
+                }
+            }
+
+            Section("Veranstaltungen") {
+                Toggle(isOn: $store.showEvents) {
+                    Text("Veranstaltungen einblenden").lineLimit(nil)
+                }
+                .onChange(of: store.showEvents) { _, on in
+                    if on { Task { await store.refreshEvents() } }
                 }
             }
 

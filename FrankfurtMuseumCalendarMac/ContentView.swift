@@ -180,11 +180,10 @@ struct ContentView: View {
                                     KinoLinkRow()
                                 }
                                 if searchFilteredEvents.isEmpty {
-                                    Text("Keine bevorstehenden Veranstaltungen")
-                                        .foregroundStyle(.tertiary)
-                                        .font(.footnote)
-                                        .italic()
-                                        .padding(.vertical, 4)
+                                    Label("Keine bevorstehenden Veranstaltungen", systemImage: "calendar.badge.exclamationmark")
+                                        .foregroundStyle(.secondary)
+                                        .font(.subheadline)
+                                        .padding(.vertical, 2)
                                 } else {
                                     ForEach(searchFilteredEvents) { event in
                                         EventRowView(

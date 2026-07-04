@@ -279,7 +279,10 @@ struct ContentView: View {
                     .scaleEffect(0.7)
             } else {
                 Button {
-                    Task { await store.refresh() }
+                    Task {
+                        await store.refresh()
+                        if store.showEvents { await store.refreshEvents(force: true) }
+                    }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }

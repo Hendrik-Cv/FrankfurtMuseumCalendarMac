@@ -32,18 +32,25 @@ final class ExhibitionStore {
     var selectedEventType: String? = nil
     var eventTimeRange: EventTimeRange = .all
 
+    var eventsLastFetched: Date?
+
     private let fetchers: [any MuseumFetcher]
     private let eventFetchers: [any EventFetcher]
     private let cacheURL: URL
+    private let eventsCacheURL: URL
+
+    private static let eventsCacheDuration: TimeInterval = 60 * 60 // 60 Minuten
 
     init() {
         self.fetchers = MuseumFetcherFactory.allFetchers()
         self.eventFetchers = MuseumFetcherFactory.allEventFetchers()
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         self.cacheURL = docs.appendingPathComponent("exhibitions_cache.json")
+        self.eventsCacheURL = docs.appendingPathComponent("events_cache.json")
         let saved = UserDefaults.standard.array(forKey: "favoriteIDs") as? [String] ?? []
         self.favoriteIDs = Set(saved.compactMap { UUID(uuidString: $0) })
         loadFromCache()
+        loadEventsFromCache()
     }
 
     func toggleFavorite(_ id: UUID) {
@@ -120,6 +127,7 @@ final class ExhibitionStore {
 
     @MainActor
     func refresh() async {
+        guard !isLoading else { return }
         isLoading = true
         fetchErrors = []
         exhibitions = []
@@ -160,7 +168,14 @@ final class ExhibitionStore {
     // MARK: - Events
 
     @MainActor
-    func refreshEvents() async {
+    func refreshEvents(force: Bool = false) async {
+        if !force,
+           let last = eventsLastFetched,
+           Date().timeIntervalSince(last) < Self.eventsCacheDuration,
+           !events.isEmpty {
+            return
+        }
+        guard !isEventsLoading else { return }
         isEventsLoading = true
         var fetched: [MuseumEvent] = []
         await withTaskGroup(of: [MuseumEvent].self) { group in
@@ -171,7 +186,14 @@ final class ExhibitionStore {
         }
         selectedEventIDs = []
         events = fetched.sorted { $0.date < $1.date }
+        eventsLastFetched = Date()
         isEventsLoading = false
+        let snapshot = events
+        let url = eventsCacheURL
+        Task.detached(priority: .background) {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            try? data.write(to: url)
+        }
     }
 
     // MARK: - Persistence
@@ -181,6 +203,14 @@ final class ExhibitionStore {
               let cached = try? JSONDecoder().decode([Exhibition].self, from: data) else { return }
         exhibitions = cached
         lastUpdated = (try? cacheURL.resourceValues(forKeys: [.contentModificationDateKey]))
+            .flatMap { $0.contentModificationDate }
+    }
+
+    private func loadEventsFromCache() {
+        guard let data = try? Data(contentsOf: eventsCacheURL),
+              let cached = try? JSONDecoder().decode([MuseumEvent].self, from: data) else { return }
+        events = cached.sorted { $0.date < $1.date }
+        eventsLastFetched = (try? eventsCacheURL.resourceValues(forKeys: [.contentModificationDateKey]))
             .flatMap { $0.contentModificationDate }
     }
 }

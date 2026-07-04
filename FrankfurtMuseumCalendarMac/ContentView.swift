@@ -176,26 +176,31 @@ struct ContentView: View {
 
                         if store.showEvents {
                             Section("Veranstaltungen") {
-                                // P8: Kino-Link für Filmmuseum
                                 if store.selectedMuseumIDs.contains("filmmuseum") {
                                     KinoLinkRow()
                                 }
-                                ForEach(searchFilteredEvents) { event in
-                                    EventRowView(
-                                        event: event,
-                                        siblingCount: seriesInfo[event.id]?.siblingCount ?? 0,
-                                        isSelected: store.selectedEventIDs.contains(event.id),
-                                        onToggle: {
-                                            if store.selectedEventIDs.contains(event.id) {
-                                                store.selectedEventIDs.remove(event.id)
-                                            } else {
-                                                store.selectedEventIDs.insert(event.id)
-                                            }
-                                        },
-                                        isFavorite: store.favoriteIDs.contains(event.id),
-                                        onToggleFavorite: { store.toggleFavorite(event.id) }
-                                    )
-                                    .tag(ListSelection.event(event.id))
+                                if searchFilteredEvents.isEmpty {
+                                    Text("Keine bevorstehenden Veranstaltungen")
+                                        .foregroundStyle(.secondary)
+                                        .font(.callout)
+                                } else {
+                                    ForEach(searchFilteredEvents) { event in
+                                        EventRowView(
+                                            event: event,
+                                            siblingCount: seriesInfo[event.id]?.siblingCount ?? 0,
+                                            isSelected: store.selectedEventIDs.contains(event.id),
+                                            onToggle: {
+                                                if store.selectedEventIDs.contains(event.id) {
+                                                    store.selectedEventIDs.remove(event.id)
+                                                } else {
+                                                    store.selectedEventIDs.insert(event.id)
+                                                }
+                                            },
+                                            isFavorite: store.favoriteIDs.contains(event.id),
+                                            onToggleFavorite: { store.toggleFavorite(event.id) }
+                                        )
+                                        .tag(ListSelection.event(event.id))
+                                    }
                                 }
                             }
                         }

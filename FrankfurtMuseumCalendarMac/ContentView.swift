@@ -173,6 +173,7 @@ struct ContentView: View {
                 } else {
                     List(selection: $listSelection) {
 
+
                         if store.showEvents {
                             Section("Veranstaltungen") {
                                 // P8: Kino-Link für Filmmuseum
@@ -264,6 +265,7 @@ struct ContentView: View {
                             }
                         }
                     }
+                    .animation(.none, value: store.filterRevision)
                 }
             }
         }

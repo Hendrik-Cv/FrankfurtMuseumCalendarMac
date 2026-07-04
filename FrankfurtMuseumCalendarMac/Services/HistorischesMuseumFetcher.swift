@@ -1,6 +1,6 @@
 import Foundation
 
-final class HistorischesMuseumFetcher: GenericMuseumFetcher, @unchecked Sendable {
+final class HistorischesMuseumFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFetcher {
     init() { super.init(museum: Museum.all.first { $0.id == "historisches" }!) }
 
     override func fetchExhibitions() async throws -> [Exhibition] {
@@ -28,7 +28,7 @@ final class HistorischesMuseumFetcher: GenericMuseumFetcher, @unchecked Sendable
                                           startDate: start, endDate: end))
         }
         guard !exhibitions.isEmpty else { throw FetcherError.noExhibitionsFound }
-        return await enrichWithDescriptions(exhibitions)
+        return await enrichWithDescriptions(exhibitions, maxParagraphs: 6)
     }
 
     // Parses "bis 31.01.27", "Ab 10.06.26", or "12.03.26 – 31.01.27"
@@ -62,5 +62,112 @@ final class HistorischesMuseumFetcher: GenericMuseumFetcher, @unchecked Sendable
         // Full range "DATE – DATE"
         if let (start, end) = HTMLFetcher.parseDateRange(s) { return (start, end) }
         return nil
+    }
+
+    // MARK: - EventFetcher
+
+    func fetchEvents() async throws -> [MuseumEvent] {
+        let apiURL = URL(string: "https://historisches-museum-frankfurt.de/de/api/calendar")!
+        let raw = try await HTMLFetcher.fetchHTML(from: apiURL)
+        guard let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entries = json["events"] as? [[String: Any]] else {
+            throw FetcherError.parsingFailed("HMF calendar API JSON")
+        }
+
+        // Build lookup tables from top-level arrays
+        let locationMap = buildLookup(json["locations"])
+        let typeMap     = buildLookup(json["types"])
+        let fallbackURL = URL(string: "https://historisches-museum-frankfurt.de/de/veranstaltungen")!
+
+        let cutoff = Calendar.current.date(byAdding: .hour, value: -2, to: Date())!
+        var events: [MuseumEvent] = []
+        var seen = Set<String>()
+
+        for entry in entries {
+            guard let type = entry["type"] as? String, type == "event",
+                  let rawTitle = entry["title"] as? String,
+                  let dateStartRaw = entry["dateStart"] else { continue }
+
+            let dateStart: Double
+            if let d = dateStartRaw as? Double { dateStart = d }
+            else if let i = dateStartRaw as? Int { dateStart = Double(i) }
+            else { continue }
+
+            let date = Date(timeIntervalSince1970: dateStart)
+            guard date >= cutoff else { continue }
+
+            // Skip "museum closed" day markers
+            let lTitle = rawTitle.lowercased()
+            guard !lTitle.contains("geschlossen") else { continue }
+
+            let key = "\(Int(dateStart))|\(rawTitle)"
+            guard seen.insert(key).inserted else { continue }
+
+            let isCancelled = rawTitle.lowercased().hasPrefix("abgesagt")
+            let title = isCancelled
+                ? rawTitle.replacingOccurrences(of: #"^[Aa]bgesagt:\s*"#, with: "", options: .regularExpression)
+                : rawTitle
+
+            // Description: prefer body, fall back to summary
+            let bodyHTML    = entry["body"]    as? String ?? ""
+            let summaryHTML = entry["summary"] as? String ?? ""
+            let descHTML = bodyHTML.isEmpty ? summaryHTML : bodyHTML
+            let desc = HTMLFetcher.htmlToStructuredText(descHTML)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Location: first UID → name
+            let locationUID = (entry["locations"] as? [String])?.first
+                           ?? (entry["locations"] as? [Any])?.compactMap { $0 as? String }.first
+                           ?? ""
+            let location = locationMap[locationUID]
+
+            // EventType: first type UID → name
+            let typeUID = (entry["types"] as? [String])?.first
+                       ?? (entry["types"] as? [Any])?.compactMap { $0 as? String }.first
+                       ?? ""
+            let eventType = typeMap[typeUID] ?? inferHMFEventType(from: title)
+
+            let evtURL = (entry["url"] as? String).flatMap { URL(string: $0) } ?? fallbackURL
+
+            events.append(MuseumEvent(
+                title: title,
+                museum: museum,
+                url: evtURL,
+                date: date,
+                eventType: eventType,
+                description: desc.isEmpty ? nil : desc,
+                location: location,
+                isCancelled: isCancelled
+            ))
+        }
+
+        return events.sorted { $0.date < $1.date }
+    }
+
+    private func buildLookup(_ value: Any?) -> [String: String] {
+        guard let arr = value as? [[String: Any]] else { return [:] }
+        var dict: [String: String] = [:]
+        for item in arr {
+            if let uid = item["uid"] as? String, let title = item["title"] as? String {
+                dict[uid] = title
+            }
+        }
+        return dict
+    }
+
+    private func inferHMFEventType(from title: String) -> String {
+        let l = title.lowercased()
+        if l.contains("führung") || l.contains("tour")      { return "Führung" }
+        if l.contains("workshop") || l.contains("werkstatt"){ return "Workshop" }
+        if l.contains("vortrag")                             { return "Vortrag" }
+        if l.contains("konzert") || l.contains("jazz")       { return "Konzert" }
+        if l.contains("stadtgang") || l.contains("stadtführung") || l.contains("fahrradtour") { return "Stadtgang" }
+        if l.contains("lesung")                              { return "Lesung" }
+        if l.contains("gespräch") || l.contains("podium") || l.contains("fishbowl") { return "Gespräch" }
+        if l.contains("symposium") || l.contains("tagung")  { return "Tagung" }
+        if l.contains("finissage")                           { return "Finissage" }
+        if l.contains("eröffnung") || l.contains("opening") { return "Eröffnung" }
+        return "Veranstaltung"
     }
 }

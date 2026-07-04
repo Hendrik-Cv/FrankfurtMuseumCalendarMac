@@ -106,7 +106,8 @@ enum HTMLFetcher {
             else { typeStr = nil }
 
             guard let t = typeStr, eventTypes.contains(t) else { return }
-            guard let title = dict["name"] as? String else { return }
+            guard let rawTitle = dict["name"] as? String else { return }
+            let title = stripHTML(rawTitle)
 
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withFullDate]
@@ -133,16 +134,74 @@ enum HTMLFetcher {
         return exhibitions
     }
 
+    // Convert HTML to structured plain text: preserves paragraph breaks and <br> as newlines.
+    // Use this instead of stripHTML when the source has a meaningful multi-paragraph structure.
+    static func htmlToStructuredText(_ html: String) -> String {
+        var s = html
+        // Entities
+        s = s
+            .replacingOccurrences(of: "&amp;",   with: "&")
+            .replacingOccurrences(of: "&lt;",    with: "<")
+            .replacingOccurrences(of: "&gt;",    with: ">")
+            .replacingOccurrences(of: "&nbsp;",  with: " ")
+            .replacingOccurrences(of: "&quot;",  with: "\"")
+            .replacingOccurrences(of: "&ndash;", with: "–")
+            .replacingOccurrences(of: "&mdash;", with: "—")
+        // Numeric character references (&#38; etc.)
+        if let ncr = try? NSRegularExpression(pattern: #"&#(\d{1,6});"#) {
+            let ns = s as NSString
+            for m in ncr.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+                guard let code = Int(ns.substring(with: m.range(at: 1))),
+                      let scalar = Unicode.Scalar(code),
+                      let r = Range(m.range, in: s) else { continue }
+                s.replaceSubrange(r, with: String(Character(scalar)))
+            }
+        }
+        // Block-level tags → newlines
+        // Consume optional trailing whitespace/newline after <br> so we don't get double blank lines
+        s = s.replacingOccurrences(of: #"<br\s*/?>[ \t]*\r?\n?"#, with: "\n", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"</p>"#,        with: "\n\n", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"</h[1-6]>"#,  with: "\n\n", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"</li>"#,       with: "\n",   options: .regularExpression)
+        // Strip remaining tags
+        s = s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        // Normalize whitespace per line and collapse 3+ blank lines
+        let lines = s.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        s = lines.joined(separator: "\n")
+        s = s.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // Strip HTML tags and decode entities
     static func stripHTML(_ html: String) -> String {
+        // Remove literal escape sequences (e.g. \n, \t from JSON-LD double-escaping)
         var s = html
-            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "&amp;",  with: "&")
-            .replacingOccurrences(of: "&lt;",   with: "<")
-            .replacingOccurrences(of: "&gt;",   with: ">")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;",  with: "'")
+            .replacingOccurrences(of: "\\n", with: " ")
+            .replacingOccurrences(of: "\\r", with: " ")
+            .replacingOccurrences(of: "\\t", with: " ")
+        // Decode entities first so that entity-encoded tags like &lt;p&gt; are also stripped
+        s = s
+            .replacingOccurrences(of: "&amp;",   with: "&")
+            .replacingOccurrences(of: "&lt;",    with: "<")
+            .replacingOccurrences(of: "&gt;",    with: ">")
+            .replacingOccurrences(of: "&nbsp;",  with: " ")
+            .replacingOccurrences(of: "&quot;",  with: "\"")
+            .replacingOccurrences(of: "&ndash;", with: "–")
+            .replacingOccurrences(of: "&mdash;", with: "—")
+            .replacingOccurrences(of: "&copy;",  with: "©")
+            .replacingOccurrences(of: "&reg;",   with: "®")
+        // Decode all remaining &#NNN; numeric character references (e.g. &#038; → &, &#39; → ')
+        if let ncr = try? NSRegularExpression(pattern: #"&#(\d{1,6});"#) {
+            let ns = s as NSString
+            for match in ncr.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+                guard match.numberOfRanges > 1,
+                      let code = Int(ns.substring(with: match.range(at: 1))),
+                      let scalar = Unicode.Scalar(code),
+                      let range = Range(match.range, in: s) else { continue }
+                s.replaceSubrange(range, with: String(Character(scalar)))
+            }
+        }
+        s = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -173,9 +232,62 @@ enum HTMLFetcher {
         return nil
     }
 
+    // Extract og:description or meta description from a page's HTML
+    static func extractMetaDescription(from html: String) -> String? {
+        let patterns = [
+            #"<meta\s+property="og:description"\s+content="([^"]{20,600})""#,
+            #"<meta\s+content="([^"]{20,600})"\s+property="og:description""#,
+            #"<meta\s+name="description"\s+content="([^"]{20,600})""#,
+            #"<meta\s+content="([^"]{20,600})"\s+name="description""#,
+        ]
+        for pattern in patterns {
+            if let raw = allCaptures(pattern: pattern, in: html).first {
+                let text = stripHTML(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.count >= 20 { return text }
+            }
+        }
+        return nil
+    }
+
+    // Extract real content paragraphs from a page, filtering out boilerplate.
+    // maxParagraphs > 1 joins multiple paragraphs up to ~1500 chars total.
+    static func extractContentDescription(from html: String, maxParagraphs: Int = 1) -> String? {
+        let paras = allCaptures(pattern: #"<p[^>]*>([\s\S]{80,3000}?)</p>"#, in: html)
+        let candidates: [String] = paras.compactMap { p -> String? in
+            let text = stripHTML(p).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 80 else { return nil }
+            let lower = text.lowercased()
+            if lower.contains("upgrade your browser") { return nil }
+            if lower.contains("javascript") && text.count < 300 { return nil }
+            if lower.contains("cookie") && text.count < 200 { return nil }
+            if lower.hasPrefix("foto") || lower.hasPrefix("photo") { return nil }
+            if text.hasPrefix("©") || text.contains("©") && text.count < 400 { return nil }
+            if lower.contains("courtesy of") { return nil }
+            if text.contains("Kalender") && text.contains("News") { return nil }
+            if text.range(of: #"^\d+\s*€"#, options: .regularExpression) != nil { return nil }
+            if lower.contains("eintritt") && text.count < 150 { return nil }
+            // Skip date-range meta lines (e.g. "13. Februar – 26. April 2026 Eine Zusammenarbeit")
+            let startsWithDate = text.range(of: #"^\d{1,2}\.?\s*(0?\d|Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)"#, options: .regularExpression) != nil
+            if startsWithDate { return nil }
+            return text
+        }
+        if maxParagraphs == 1 {
+            return candidates.first(where: { !$0.hasSuffix("?") }) ?? candidates.first
+        }
+        // Multiple paragraphs: preserve page order, cap at 6000 chars total
+        var result: [String] = []
+        var total = 0
+        for p in candidates.prefix(maxParagraphs) {
+            if total + p.count > 6000 { break }
+            result.append(p)
+            total += p.count
+        }
+        return result.isEmpty ? nil : result.joined(separator: "\n\n")
+    }
+
     // Parse a date-range text like "12.06.2025 – 14.09.2025"
     static func parseDateRange(_ text: String) -> (Date, Date)? {
-        let separators = ["–", "—", " bis ", " - ", "−"]
+        let separators = ["–", "—", " bis ", " - ", "−", "&ndash;", "&mdash;"]
         for sep in separators {
             let parts = text.components(separatedBy: sep)
             guard parts.count == 2 else { continue }

@@ -1,5 +1,10 @@
 import Foundation
 
+protocol EventFetcher: Sendable {
+    var museum: Museum { get }
+    func fetchEvents() async throws -> [MuseumEvent]
+}
+
 class GenericMuseumFetcher: @unchecked Sendable, MuseumFetcher {
     let museum: Museum
 
@@ -36,7 +41,7 @@ class GenericMuseumFetcher: @unchecked Sendable, MuseumFetcher {
 
     func parseByTimeElements(_ html: String) -> [Exhibition] {
         let datetimes = HTMLFetcher.allCaptures(
-            pattern: #"<time[^>]+datetime=["\'](["\']+)["\'"][^>]*>"#, in: html)
+            pattern: #"<time[^>]+datetime=["\']([^"\']+)["\'][^>]*>"#, in: html)
         let titles = HTMLFetcher.allCaptures(
             pattern: #"<h[23][^>]*>([^<]{5,120})</h[23]>"#, in: html
         ).map { HTMLFetcher.stripHTML($0) }
@@ -234,14 +239,14 @@ class GenericMuseumFetcher: @unchecked Sendable, MuseumFetcher {
                     guard ex.description == nil,
                           ex.url.absoluteString != museum.exhibitionsURL.absoluteString,
                           let html = try? await HTMLFetcher.fetchHTML(from: ex.url) else { return ex }
-                    let desc = await MainActor.run { () -> String? in
-                        let og = HTMLFetcher.extractMetaDescription(from: html)
-                        let content = HTMLFetcher.extractContentDescription(from: html, maxParagraphs: maxParagraphs)
-                        // Prefer content description when it's substantially longer than OG
-                        if let og, let content, content.count > og.count * 2 {
-                            return content
-                        }
-                        return og ?? content
+                    let og = HTMLFetcher.extractMetaDescription(from: html)
+                    let content = HTMLFetcher.extractContentDescription(from: html, maxParagraphs: maxParagraphs)
+                    // Prefer content description when it's substantially longer than OG
+                    let desc: String?
+                    if let og, let content, content.count > og.count * 2 {
+                        desc = content
+                    } else {
+                        desc = og ?? content
                     }
                     guard let desc else { return ex }
                     return Exhibition(id: ex.id, title: ex.title, museum: ex.museum, url: ex.url,

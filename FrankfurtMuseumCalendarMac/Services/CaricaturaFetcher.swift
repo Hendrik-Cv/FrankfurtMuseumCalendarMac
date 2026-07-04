@@ -1,6 +1,6 @@
 import Foundation
 
-final class CaricaturaFetcher: GenericMuseumFetcher, @unchecked Sendable {
+final class CaricaturaFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFetcher {
     private static let base = "https://www.caricatura-museum.de"
 
     init() { super.init(museum: Museum.all.first { $0.id == "caricatura" }!) }
@@ -16,7 +16,7 @@ final class CaricaturaFetcher: GenericMuseumFetcher, @unchecked Sendable {
             guard let html = try? await HTMLFetcher.fetchHTML(from: pageURL) else { continue }
             // Try all badge paragraphs; use first that yields a valid date range
             let badges = HTMLFetcher.allCaptures(pattern: #"class="badge"[^>]*>([^<]+)<"#, in: html)
-            guard let (start, end) = badges.lazy.compactMap({ parseBadgeDate($0) }).first else { continue }
+            guard let (start, end) = badges.lazy.compactMap({ self.parseBadgeDate($0) }).first else { continue }
             guard let title = HTMLFetcher.allCaptures(
                     pattern: #"<h2[^>]*class="headline"[^>]*>([^<]+)</h2>"#, in: html).first?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -49,6 +49,91 @@ final class CaricaturaFetcher: GenericMuseumFetcher, @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    // MARK: - EventFetcher
+
+    func fetchEvents() async throws -> [MuseumEvent] {
+        let listURL = URL(string: "\(Self.base)/veranstaltungen/")!
+        let html = try await HTMLFetcher.fetchHTML(from: listURL)
+
+        let rows = HTMLFetcher.allCaptures(
+            pattern: #"<div\s+class="event_row\s+columns">([\s\S]+?)<div\s+class="column_112"></div>"#,
+            in: html)
+
+        let cutoff = Calendar.current.date(byAdding: .hour, value: -2, to: Date())!
+        var events: [MuseumEvent] = []
+
+        for row in rows {
+            guard let dateStr = extractFirst(pattern: #"class="event_date">(\d{1,2}\.\d{1,2}\.)<"#, in: row),
+                  let href = extractFirst(pattern: #"href="(/aktuelles/veranstaltungen/veranstaltung/[^"]+)""#, in: row)
+            else { continue }
+
+            let timeStr = extractFirst(
+                pattern: #"class="event_time"[^>]*>(?:[\s\S]{0,100}?)(\d{1,2}\.\d{2})\s+Uhr"#,
+                in: row) ?? ""
+
+            guard let date = parseCaricaturaDate(dateStr, time: timeStr) else { continue }
+            guard date >= cutoff else { continue }
+
+            let titleHTML = extractFirst(pattern: #"<a\s+href="[^"]+"\s*>([\s\S]{5,500}?)</a>"#, in: row) ?? ""
+            let title = HTMLFetcher.stripHTML(
+                titleHTML
+                    .replacingOccurrences(of: "<br>", with: " ")
+                    .replacingOccurrences(of: "<br/>", with: " ")
+                    .replacingOccurrences(of: "<br />", with: " ")
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+
+            let eventURL = URL(string: "\(Self.base)\(href)") ?? listURL
+
+            events.append(MuseumEvent(
+                title: title,
+                museum: museum,
+                url: eventURL,
+                date: date,
+                eventType: inferCaricaturaEventType(from: title)
+            ))
+        }
+
+        return events.sorted { $0.date < $1.date }
+    }
+
+    private func parseCaricaturaDate(_ dateStr: String, time: String) -> Date? {
+        let parts = dateStr.components(separatedBy: ".").filter { !$0.isEmpty }
+        guard parts.count == 2,
+              let day = Int(parts[0]),
+              let month = Int(parts[1]) else { return nil }
+        let year = inferCaricaturaYear(day: day, month: month)
+        let timeParts = time.components(separatedBy: ".")
+        let hour   = timeParts.count >= 1 ? Int(timeParts[0]) ?? 0 : 0
+        let minute = timeParts.count >= 2 ? Int(timeParts[1]) ?? 0 : 0
+        var comps = DateComponents()
+        comps.year = year; comps.month = month; comps.day = day
+        comps.hour = hour; comps.minute = minute
+        return Calendar.current.date(from: comps)
+    }
+
+    private func inferCaricaturaYear(day: Int, month: Int) -> Int {
+        let cal = Calendar.current
+        let now = Date()
+        let cm = cal.component(.month, from: now)
+        let cd = cal.component(.day, from: now)
+        let cy = cal.component(.year, from: now)
+        return (month > cm || (month == cm && day >= cd)) ? cy : cy + 1
+    }
+
+    private func inferCaricaturaEventType(from title: String) -> String {
+        let l = title.lowercased()
+        if l.contains("eröffnung") || l.contains("opening") { return "Eröffnung" }
+        if l.contains("führung") || l.contains("tour")      { return "Führung" }
+        if l.contains("workshop")                            { return "Workshop" }
+        if l.contains("vortrag") || l.contains("lecture")   { return "Vortrag" }
+        if l.contains("konzert")                             { return "Konzert" }
+        if l.contains("finissage")                           { return "Finissage" }
+        if l.contains("lesung")                              { return "Lesung" }
+        return "Veranstaltung"
     }
 
     private func extractDescription(from html: String) -> String? {

@@ -9,6 +9,9 @@ struct MuseumEvent: Identifiable, Codable, Sendable {
     var eventType: String
     var description: String?
     var exhibitionTitle: String?
+    var location: String?
+    var language: String?
+    var notes: String?
     var isCancelled: Bool
     var fetchedAt: Date
 
@@ -21,6 +24,9 @@ struct MuseumEvent: Identifiable, Codable, Sendable {
         eventType: String,
         description: String? = nil,
         exhibitionTitle: String? = nil,
+        location: String? = nil,
+        language: String? = nil,
+        notes: String? = nil,
         isCancelled: Bool = false
     ) {
         self.id = id
@@ -31,6 +37,9 @@ struct MuseumEvent: Identifiable, Codable, Sendable {
         self.eventType = eventType
         self.description = description
         self.exhibitionTitle = exhibitionTitle
+        self.location = location
+        self.language = language
+        self.notes = notes
         self.isCancelled = isCancelled
         self.fetchedAt = Date()
     }

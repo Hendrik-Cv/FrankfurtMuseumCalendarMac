@@ -10,8 +10,8 @@ struct Exhibition: Identifiable, Codable, Sendable {
     var description: String?
     var fetchedAt: Date
 
-    init(id: UUID = UUID(), title: String, museum: Museum, url: URL,
-         startDate: Date, endDate: Date, description: String? = nil) {
+    nonisolated init(id: UUID = UUID(), title: String, museum: Museum, url: URL,
+                     startDate: Date, endDate: Date, description: String? = nil) {
         self.id = id
         self.title = title
         self.museum = museum

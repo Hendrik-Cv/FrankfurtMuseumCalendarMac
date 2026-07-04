@@ -18,7 +18,7 @@ struct EventRowView: View {
             }
 
             RoundedRectangle(cornerRadius: 3)
-                .fill(Color(hex: event.museum.colorHex) ?? .blue)
+                .fill(Color(adaptiveHex: event.museum.colorHex) ?? .blue)
                 .frame(width: 4)
                 .frame(minHeight: 36)
 
@@ -27,7 +27,7 @@ struct EventRowView: View {
                     Text(event.museum.shortName)
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundStyle(Color(hex: event.museum.colorHex) ?? .blue)
+                        .foregroundStyle(Color(adaptiveHex: event.museum.colorHex) ?? .blue)
                     Spacer()
                     if siblingCount > 0 {
                         Text("+\(siblingCount) Termin\(siblingCount == 1 ? "" : "e")")
@@ -90,26 +90,12 @@ struct EventTypeBadge: View {
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(eventTypeColor(type).opacity(0.15))
-            .foregroundStyle(eventTypeColor(type))
+            .background(MuseumEvent.color(for: type).opacity(0.15))
+            .foregroundStyle(MuseumEvent.color(for: type))
             .clipShape(Capsule())
     }
 }
 
-func eventTypeColor(_ type: String) -> Color {
-    let l = type.lowercased()
-    if l.contains("führung")                                 { return .orange }
-    if l.contains("eröffnung") || l.contains("opening")     { return .blue   }
-    if l.contains("finissage")                               { return .pink   }
-    if l.contains("vortrag") || l.contains("diskussion") || l.contains("gespräch") || l.contains("lecture") { return .purple }
-    if l.contains("workshop")                                { return .teal   }
-    if l.contains("kinder") || l.contains("familie") || l.contains("ferienprogramm") { return .green }
-    if l.contains("konzert") || l.contains("musik")         { return .indigo }
-    if l.contains("film") || l.contains("kino")             { return .brown  }
-    if l.contains("performance")                             { return .pink   }
-    if l.contains("exkursion") || l.contains("spazier")     { return .mint   }
-    return .gray
-}
 
 private struct CancelledBadge: View {
     var body: some View {

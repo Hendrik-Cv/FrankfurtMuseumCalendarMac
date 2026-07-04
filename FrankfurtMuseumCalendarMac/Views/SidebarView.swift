@@ -67,7 +67,7 @@ struct SidebarView: View {
                         )) {
                             HStack(spacing: 8) {
                                 RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color(hex: museum.colorHex) ?? .blue)
+                                    .fill(Color(adaptiveHex: museum.colorHex) ?? .blue)
                                     .frame(width: 4, height: 16)
                                 Text(museum.shortName)
                                     .font(.body)

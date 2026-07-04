@@ -20,9 +20,14 @@ struct ContentView: View {
         return store.exhibitions.first { $0.id == id }
     }
 
-    private var selectedEventGroup: EventGroup? {
+    private var selectedEvent: MuseumEvent? {
         guard case .event(let id) = listSelection else { return nil }
-        return store.groupedFilteredEvents.first { $0.id == id }
+        return store.filteredEvents.first { $0.id == id }
+    }
+
+    // Precomputed once per render cycle for all rows + detail pane
+    private var seriesInfo: [MuseumEvent.ID: ExhibitionStore.EventSeriesInfo] {
+        store.eventSeriesInfo
     }
 
     var searchResults: [Exhibition] {
@@ -35,12 +40,12 @@ struct ContentView: View {
     }
 
     // P6: search extended to events
-    var filteredEventGroups: [EventGroup] {
-        let groups = store.groupedFilteredEvents
-        guard !searchText.isEmpty else { return groups }
-        return groups.filter {
-            $0.primary.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.primary.museum.name.localizedCaseInsensitiveContains(searchText)
+    var searchFilteredEvents: [MuseumEvent] {
+        let events = store.filteredEvents
+        guard !searchText.isEmpty else { return events }
+        return events.filter {
+            $0.title.localizedCaseInsensitiveContains(searchText) ||
+            $0.museum.name.localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -53,10 +58,13 @@ struct ContentView: View {
             exhibitionList
                 .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         } detail: {
-            if let group = selectedEventGroup {
-                EventDetailView(group: group)
-                    .environment(exporter)
-                    .id(group.id)
+            if let event = selectedEvent {
+                EventDetailView(
+                    event: event,
+                    siblings: seriesInfo[event.id]?.siblings ?? []
+                )
+                .environment(exporter)
+                .id(event.id)
             } else if let exhibition = selectedExhibition {
                 ExhibitionDetailView(exhibition: exhibition)
                     .environment(exporter)
@@ -92,6 +100,8 @@ struct ContentView: View {
 
     private var exhibitionList: some View {
         VStack(spacing: 0) {
+            ThinLoadingBar(isActive: store.isLoading || store.isEventsLoading)
+
             // P2 + P4: event filter bar
             if store.showEvents && !store.events.isEmpty {
                 EventFilterBar()
@@ -107,7 +117,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if searchResults.isEmpty && filteredEventGroups.isEmpty {
+                } else if searchResults.isEmpty && searchFilteredEvents.isEmpty {
                     ContentUnavailableView(
                         "Keine Einträge",
                         systemImage: "building.columns",
@@ -117,15 +127,6 @@ struct ContentView: View {
                     )
                 } else {
                     List(selection: $listSelection) {
-                        if store.isLoading {
-                            HStack(spacing: 6) {
-                                ProgressView().scaleEffect(0.7)
-                                Text("Wird aktualisiert…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .listRowSeparator(.hidden)
-                        }
 
                         if store.showEvents {
                             Section("Veranstaltungen") {
@@ -133,21 +134,22 @@ struct ContentView: View {
                                 if store.selectedMuseumIDs.contains("filmmuseum") {
                                     KinoLinkRow()
                                 }
-                                ForEach(filteredEventGroups) { group in
+                                ForEach(searchFilteredEvents) { event in
                                     EventRowView(
-                                        group: group,
-                                        isSelected: store.selectedEventIDs.contains(group.id),
+                                        event: event,
+                                        siblingCount: seriesInfo[event.id]?.siblingCount ?? 0,
+                                        isSelected: store.selectedEventIDs.contains(event.id),
                                         onToggle: {
-                                            if store.selectedEventIDs.contains(group.id) {
-                                                store.selectedEventIDs.remove(group.id)
+                                            if store.selectedEventIDs.contains(event.id) {
+                                                store.selectedEventIDs.remove(event.id)
                                             } else {
-                                                store.selectedEventIDs.insert(group.id)
+                                                store.selectedEventIDs.insert(event.id)
                                             }
                                         },
-                                        isFavorite: store.favoriteIDs.contains(group.id),
-                                        onToggleFavorite: { store.toggleFavorite(group.id) }
+                                        isFavorite: store.favoriteIDs.contains(event.id),
+                                        onToggleFavorite: { store.toggleFavorite(event.id) }
                                     )
-                                    .tag(ListSelection.event(group.id))
+                                    .tag(ListSelection.event(event.id))
                                 }
                             }
                         }
@@ -256,7 +258,7 @@ struct ContentView: View {
             .help("Alle exportieren")
             .disabled(store.filteredExhibitions.isEmpty)
 
-            if store.isLoading {
+            if store.isLoading || store.isEventsLoading {
                 ProgressView()
                     .scaleEffect(0.7)
             } else {
@@ -336,43 +338,42 @@ private struct EventFilterChip: View {
     }
 }
 
-// MARK: - Kino Link Row (P8)
+// MARK: - Thin Loading Bar
 
-private struct KinoLinkRow: View {
-    private let filmmuseum = Museum.all.first { $0.id == "filmmuseum" }!
+private struct ThinLoadingBar: View {
+    let isActive: Bool
+    @State private var phase: CGFloat = -0.45
 
     var body: some View {
-        Button {
-            NSWorkspace.shared.open(URL(string: "https://www.dff.film/kino/")!)
-        } label: {
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(hex: filmmuseum.colorHex) ?? .purple)
-                    .frame(width: 4, height: 44)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(filmmuseum.shortName)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color(hex: filmmuseum.colorHex) ?? .purple)
-                    Text("DFF Kino")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                    Text("Spielplan auf dff.film ↗")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "film")
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 3)
-            .contentShape(Rectangle())
+        GeometryReader { geo in
+            let w = geo.size.width
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [.clear, Color.accentColor.opacity(0.75), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: w * 0.45)
+                .offset(x: phase * w)
         }
-        .buttonStyle(.plain)
+        .frame(height: 2)
+        .clipped()
+        .opacity(isActive ? 1 : 0)
+        .animation(.easeInOut(duration: 0.3), value: isActive)
+        .onAppear { if isActive { startSlide() } }
+        .onChange(of: isActive) { _, active in if active { startSlide() } }
+    }
+
+    private func startSlide() {
+        phase = -0.45
+        withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+            phase = 1.0
+        }
     }
 }
+
 
 // MARK: - Bulk Export Sheet
 

@@ -6,6 +6,7 @@ struct ExhibitionDetailView: View {
     @State private var showCalendarPicker = false
     @State private var exporterMessage: String?
     @Environment(ICalExporter.self) private var exporter
+    @Environment(ExhibitionStore.self) private var store
 
     var body: some View {
         ScrollView {
@@ -17,9 +18,16 @@ struct ExhibitionDetailView: View {
                         Text(exhibition.museum.name)
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color(hex: exhibition.museum.colorHex) ?? .accentColor)
+                            .foregroundStyle(Color(adaptiveHex: exhibition.museum.colorHex) ?? .accentColor)
                         Spacer()
                         StatusChip(status: exhibition.status)
+                        Button {
+                            store.toggleFavorite(exhibition.id)
+                        } label: {
+                            Image(systemName: store.favoriteIDs.contains(exhibition.id) ? "star.fill" : "star")
+                                .foregroundStyle(store.favoriteIDs.contains(exhibition.id) ? Color.yellow : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
                     Text(exhibition.title)
                         .font(.title2)
@@ -32,6 +40,12 @@ struct ExhibitionDetailView: View {
                 // Dates
                 LabeledRow(icon: "calendar", label: "Laufzeit") {
                     Text(exhibition.formattedDateRange)
+                        .font(.body)
+                }
+
+                // Address
+                LabeledRow(icon: "mappin.and.ellipse", label: "Ort") {
+                    Text(exhibition.museum.address)
                         .font(.body)
                 }
 
@@ -76,6 +90,14 @@ struct ExhibitionDetailView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
+                    } else if exporter.isDenied {
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                        } label: {
+                            Label("Kalender in Einstellungen freigeben", systemImage: "calendar.badge.exclamationmark")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
                     } else {
                         Button {
                             Task { await exporter.requestAccess() }

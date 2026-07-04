@@ -34,20 +34,18 @@ class WordPressExhibitionFetcher: GenericMuseumFetcher, @unchecked Sendable {
                 group.addTask {
                     guard let url = URL(string: link),
                           let html = try? await HTMLFetcher.fetchHTML(from: url) else { return [] }
-                    return await MainActor.run {
-                        let jsonLD = HTMLFetcher.extractJSONLD(from: html)
-                        var results = HTMLFetcher.exhibitionsFromJSONLD(jsonLD, museum: museum)
-                        if results.contains(where: { $0.description == nil }),
-                           let fallbackDesc = HTMLFetcher.extractMetaDescription(from: html) {
-                            results = results.map { ex in
-                                guard ex.description == nil else { return ex }
-                                return Exhibition(id: ex.id, title: ex.title, museum: ex.museum, url: ex.url,
-                                                  startDate: ex.startDate, endDate: ex.endDate,
-                                                  description: fallbackDesc)
-                            }
+                    let jsonLD = HTMLFetcher.extractJSONLD(from: html)
+                    var results = HTMLFetcher.exhibitionsFromJSONLD(jsonLD, museum: museum)
+                    if results.contains(where: { $0.description == nil }),
+                       let fallbackDesc = HTMLFetcher.extractMetaDescription(from: html) {
+                        results = results.map { ex in
+                            guard ex.description == nil else { return ex }
+                            return Exhibition(id: ex.id, title: ex.title, museum: ex.museum, url: ex.url,
+                                              startDate: ex.startDate, endDate: ex.endDate,
+                                              description: fallbackDesc)
                         }
-                        return results
                     }
+                    return results
                 }
             }
             for await result in group { exhibitions.append(contentsOf: result) }

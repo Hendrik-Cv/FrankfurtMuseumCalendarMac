@@ -17,6 +17,9 @@ DerivedData/
 .AppleDouble
 .LSOverride
 
+# Build exports
+Exports/
+
 # CocoaPods
 Pods/
 

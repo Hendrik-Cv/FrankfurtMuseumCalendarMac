@@ -19,6 +19,15 @@ struct SidebarView: View {
                 .tint(.yellow)
             }
 
+            Section("Veranstaltungen") {
+                Toggle(isOn: $store.showEvents) {
+                    Text("Veranstaltungen einblenden").lineLimit(nil)
+                }
+                .onChange(of: store.showEvents) { _, on in
+                    if on { Task { await store.refreshEvents() } }
+                }
+            }
+
             Section("Ausstellungen") {
                 Toggle(isOn: $store.showPast) {
                     Text("Vergangene einblenden").lineLimit(nil)
@@ -33,15 +42,6 @@ struct SidebarView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                }
-            }
-
-            Section("Veranstaltungen") {
-                Toggle(isOn: $store.showEvents) {
-                    Text("Veranstaltungen einblenden").lineLimit(nil)
-                }
-                .onChange(of: store.showEvents) { _, on in
-                    if on { Task { await store.refreshEvents() } }
                 }
             }
 

@@ -29,10 +29,6 @@ struct SidebarView: View {
             }
 
             Section("Ausstellungen") {
-                Toggle(isOn: $store.showPast) {
-                    Text("Vergangene einblenden").lineLimit(nil)
-                }
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sortierung")
                     Picker("", selection: $store.sortOrder) {
@@ -42,6 +38,10 @@ struct SidebarView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
+                }
+
+                Toggle(isOn: $store.showPast) {
+                    Text("Vergangene einblenden").lineLimit(nil)
                 }
             }
 

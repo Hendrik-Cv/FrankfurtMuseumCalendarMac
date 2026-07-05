@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var showBulkExport = false
     @State private var showEventExport = false
     @State private var showErrorSheet = false
+    @State private var showWelcome = false
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
     private enum ListSelection: Hashable {
         case exhibition(Exhibition.ID)
@@ -103,6 +105,12 @@ struct ContentView: View {
         .sheet(isPresented: $showErrorSheet) {
             ErrorSheet()
                 .environment(store)
+        }
+        .sheet(isPresented: $showWelcome) {
+            WelcomeView()
+        }
+        .onAppear {
+            if !hasSeenWelcome { showWelcome = true }
         }
         .task {
             await withTaskGroup(of: Void.self) { group in
@@ -310,6 +318,13 @@ struct ContentView: View {
             }
             .help("Alle exportieren")
             .disabled(store.filteredExhibitions.isEmpty)
+
+            Button {
+                showWelcome = true
+            } label: {
+                Image(systemName: "questionmark.circle")
+            }
+            .help("Einführung anzeigen")
 
             if store.isLoading {
                 Label(

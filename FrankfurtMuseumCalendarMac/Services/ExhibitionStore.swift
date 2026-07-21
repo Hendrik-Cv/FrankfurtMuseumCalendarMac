@@ -207,13 +207,27 @@ final class ExhibitionStore {
         loadedEventMuseumCount = 0
         totalEventMuseumCount = eventFetchers.count
         var fetched: [MuseumEvent] = []
-        await withTaskGroup(of: [MuseumEvent].self) { group in
+        await withTaskGroup(of: (museum: String, events: [MuseumEvent], error: String?).self) { group in
             for fetcher in eventFetchers {
-                group.addTask { (try? await fetcher.fetchEvents()) ?? [] }
+                let museumName = fetcher.museum.name
+                group.addTask {
+                    do {
+                        let evts = try await fetcher.fetchEvents()
+                        return (museum: museumName, events: evts, error: nil)
+                    } catch {
+                        return (museum: museumName, events: [], error: error.localizedDescription)
+                    }
+                }
             }
-            for await batch in group {
+            for await result in group {
                 loadedEventMuseumCount += 1
-                fetched.append(contentsOf: batch)
+                if let err = result.error {
+                    if !fetchErrors.contains(where: { $0.museum == result.museum }) {
+                        fetchErrors.append((museum: result.museum, message: err))
+                    }
+                } else {
+                    fetched.append(contentsOf: result.events)
+                }
             }
         }
         selectedEventIDs = []

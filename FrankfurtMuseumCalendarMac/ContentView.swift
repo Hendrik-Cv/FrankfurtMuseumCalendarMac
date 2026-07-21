@@ -112,6 +112,9 @@ struct ContentView: View {
         .onAppear {
             if !hasSeenWelcome { showWelcome = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showWelcome)) { _ in
+            showWelcome = true
+        }
         .task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await store.refresh() }

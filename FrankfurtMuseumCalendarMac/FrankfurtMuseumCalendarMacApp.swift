@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let showWelcome = Notification.Name("showWelcome")
+}
+
 @main
 struct FrankfurtMuseumCalendarMacApp: App {
     @State private var store = ExhibitionStore()
@@ -17,6 +21,12 @@ struct FrankfurtMuseumCalendarMacApp: App {
                     Task { await store.refresh() }
                 }
                 .keyboardShortcut("r", modifiers: .command)
+            }
+            CommandGroup(replacing: .help) {
+                Button("Einführung anzeigen") {
+                    NotificationCenter.default.post(name: .showWelcome, object: nil)
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
             }
         }
     }

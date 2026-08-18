@@ -2,6 +2,10 @@
 
 Eine macOS-App, die aktuelle Ausstellungen und Veranstaltungen aus Frankfurter Museen an einem Ort zusammenführt.
 
+![Veranstaltungskalender](Screenshots/screenshot_main.png)
+
+![Ausstellungsübersicht](Screenshots/screenshot_exhibitions.png)
+
 ## Features
 
 - **Ausstellungsübersicht** – laufende, bald schließende und kommende Ausstellungen aus 15 Museen, täglich aktualisiert

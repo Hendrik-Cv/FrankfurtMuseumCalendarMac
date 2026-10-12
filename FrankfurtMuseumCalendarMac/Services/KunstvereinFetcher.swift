@@ -176,7 +176,7 @@ final class KunstvereinFetcher: GenericMuseumFetcher, @unchecked Sendable, Event
         return "Veranstaltung"
     }
 
-    private static func extractDescription(from html: String) -> String? {
+    private nonisolated static func extractDescription(from html: String) -> String? {
         // Skip photo caption paragraphs by class; capture remaining <p> content
         let paras = HTMLFetcher.allCaptures(
             pattern: #"<p(?![^>]*class="credits")[^>]*>([\s\S]{80,2000}?)</p>"#, in: html)

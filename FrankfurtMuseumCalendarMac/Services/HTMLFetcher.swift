@@ -39,7 +39,7 @@ private final class AnySSLDelegate: NSObject, URLSessionDelegate, @unchecked Sen
     }
 }
 
-enum HTMLFetcher {
+nonisolated enum HTMLFetcher {
     private static let delegate = AnySSLDelegate()
 
     static let session: URLSession = {

@@ -199,7 +199,7 @@ final class PortikusFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFet
     }
 
     // Parses "29.05.–30.08.2026" — year only on end date
-    private static func parsePortikusDate(_ raw: String) -> (Date, Date)? {
+    private nonisolated static func parsePortikusDate(_ raw: String) -> (Date, Date)? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         for sep in ["–", "—", "-"] {
             let parts = s.components(separatedBy: sep)

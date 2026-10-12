@@ -14,37 +14,49 @@ final class MMKFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFetcher 
         let upcoming = json["items_upcoming"] as? [[String: Any]] ?? []
         guard !upcoming.isEmpty else { throw FetcherError.noExhibitionsFound }
 
+        // Parse the non-Sendable [String: Any] items up front so the task group
+        // closures below only capture Sendable values.
+        struct ParsedItem: Sendable {
+            let title: String
+            let startTS: Double
+            let endTS: Double
+            let url: URL
+            let itemName: String
+        }
         let museum = self.museum
+        let parsedItems: [ParsedItem] = upcoming.compactMap { item in
+            guard let titleDe = (item["title"] as? [String: Any])?["de"] as? String else { return nil }
+            let subtitleDe = (item["subtitle"] as? [String: Any])?["de"] as? String ?? ""
+            let startTS = (item["date"] as? [String: Any])?["timestamp"] as? Double ?? 0
+            let endTS   = (item["date_end"] as? [String: Any])?["timestamp"] as? Double ?? 0
+            guard startTS > 0, endTS > 0 else { return nil }
+            let path = item["path"] as? String ?? ""
+            let url = URL(string: "https://www.mmk.art\(path)") ?? museum.exhibitionsURL
+
+            let venueLabel: String? = {
+                guard let venues = item["related_venues"] as? [[String: Any]],
+                      let name = venues.first?["name"] as? String else { return nil }
+                switch name.lowercased() {
+                case "zollamt": return "Zollamt"
+                case "tower":   return "Tower"
+                default:        return nil
+                }
+            }()
+            var title = subtitleDe.isEmpty ? titleDe : "\(titleDe) – \(subtitleDe)"
+            if let label = venueLabel { title += " (\(label))" }
+
+            let itemName = item["name"] as? String ?? ""
+            return ParsedItem(title: title, startTS: startTS, endTS: endTS, url: url, itemName: itemName)
+        }
+
         var exhibitions: [Exhibition] = []
         await withTaskGroup(of: Exhibition?.self) { group in
-            for item in upcoming {
+            for parsed in parsedItems {
                 group.addTask {
-                    guard let titleDe = (item["title"] as? [String: Any])?["de"] as? String else { return nil }
-                    let subtitleDe = (item["subtitle"] as? [String: Any])?["de"] as? String ?? ""
-                    let startTS = (item["date"] as? [String: Any])?["timestamp"] as? Double ?? 0
-                    let endTS   = (item["date_end"] as? [String: Any])?["timestamp"] as? Double ?? 0
-                    guard startTS > 0, endTS > 0 else { return nil }
-                    let path = item["path"] as? String ?? ""
-                    let url = URL(string: "https://www.mmk.art\(path)") ?? museum.exhibitionsURL
-
-                    let venueLabel: String? = {
-                        guard let venues = item["related_venues"] as? [[String: Any]],
-                              let name = venues.first?["name"] as? String else { return nil }
-                        switch name.lowercased() {
-                        case "zollamt": return "Zollamt"
-                        case "tower":   return "Tower"
-                        default:        return nil
-                        }
-                    }()
-                    var title = subtitleDe.isEmpty ? titleDe : "\(titleDe) – \(subtitleDe)"
-                    if let label = venueLabel { title += " (\(label))" }
-
-                    let itemName = item["name"] as? String ?? ""
-                    let desc = await Self.fetchDescription(itemName: itemName)
-
-                    return Exhibition(title: title, museum: museum, url: url,
-                                      startDate: Date(timeIntervalSince1970: startTS),
-                                      endDate: Date(timeIntervalSince1970: endTS),
+                    let desc = await Self.fetchDescription(itemName: parsed.itemName)
+                    return Exhibition(title: parsed.title, museum: museum, url: parsed.url,
+                                      startDate: Date(timeIntervalSince1970: parsed.startTS),
+                                      endDate: Date(timeIntervalSince1970: parsed.endTS),
                                       description: desc)
                 }
             }

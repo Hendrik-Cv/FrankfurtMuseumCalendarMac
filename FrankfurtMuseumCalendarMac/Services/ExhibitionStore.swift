@@ -35,7 +35,8 @@ final class ExhibitionStore {
     var showOnlyFavorites = false { didSet { filterRevision += 1; rebuildAllCaches() } }
     var favoriteIDs: Set<UUID> = [] { didSet { filterRevision += 1; rebuildAllCaches() } }
     var selectedEventType: String? = nil { didSet { filterRevision += 1; rebuildEventCache() } }
-    var eventTimeRange: EventTimeRange = .all { didSet { filterRevision += 1; rebuildEventCache() } }
+    // "Heute" filtert auch Ausstellungen, daher rebuildAllCaches
+    var eventTimeRange: EventTimeRange = .all { didSet { filterRevision += 1; rebuildAllCaches() } }
 
     // MARK: - Non-filter state
     var showEvents = true
@@ -50,6 +51,7 @@ final class ExhibitionStore {
 
     enum EventTimeRange: String, CaseIterable, Equatable {
         case all       = "Alle"
+        case today     = "Heute"
         case thisWeek  = "Diese Woche"
         case thisMonth = "Dieser Monat"
     }
@@ -63,7 +65,16 @@ final class ExhibitionStore {
 
     private func rebuildExhibitionCache() {
         var list = exhibitions.filter { selectedMuseumIDs.contains($0.museum.id) }
-        if !showPast { list = list.filter { $0.status != .past } }
+        if eventTimeRange == .today {
+            // "Heute" = Ausstellung läuft am heutigen Tag (Tagesgranularität, damit
+            // Ausstellungen mit endDate um 00:00 am Schließtag noch erscheinen)
+            let cal = Calendar.current
+            let todayStart = cal.startOfDay(for: Date())
+            let todayEnd = cal.date(byAdding: .day, value: 1, to: todayStart)!
+            list = list.filter { $0.startDate < todayEnd && $0.endDate >= todayStart }
+        } else if !showPast {
+            list = list.filter { $0.status != .past }
+        }
         if showOnlyFavorites { list = list.filter { favoriteIDs.contains($0.id) } }
         switch sortOrder {
         case .startDate: list.sort { $0.startDate < $1.startDate }
@@ -80,6 +91,9 @@ final class ExhibitionStore {
         switch eventTimeRange {
         case .all:
             list = list.filter { $0.date >= now }
+        case .today:
+            // Ganzer heutiger Tag, ohne ">= now" — Events ohne Uhrzeit (00:00) bleiben sichtbar
+            list = list.filter { cal.isDateInToday($0.date) }
         case .thisWeek:
             let end = cal.date(byAdding: .day, value: 7, to: now)!
             list = list.filter { $0.date >= now && $0.date <= end }
@@ -95,6 +109,7 @@ final class ExhibitionStore {
         var allList = events.filter { selectedMuseumIDs.contains($0.museum.id) }
         switch eventTimeRange {
         case .all:      allList = allList.filter { $0.date >= now }
+        case .today:    allList = allList.filter { cal.isDateInToday($0.date) }
         case .thisWeek: let end = cal.date(byAdding: .day, value: 7, to: now)!
                         allList = allList.filter { $0.date >= now && $0.date <= end }
         case .thisMonth: let end = cal.date(byAdding: .month, value: 1, to: now)!
@@ -140,6 +155,22 @@ final class ExhibitionStore {
         loadFromCache()
         loadEventsFromCache()
         rebuildAllCaches()
+        observeDayChanges()
+    }
+
+    // Rebuilds all date-based filters at midnight (also fired after wake from sleep),
+    // so a long-running app keeps "Heute"/"Diese Woche" etc. anchored to the current day.
+    private func observeDayChanges() {
+        Task { @MainActor [weak self] in
+            let dayChanges = NotificationCenter.default
+                .notifications(named: .NSCalendarDayChanged)
+                .map { _ in () }
+            for await _ in dayChanges {
+                guard let self else { return }
+                self.filterRevision += 1
+                self.rebuildAllCaches()
+            }
+        }
     }
 
     func toggleFavorite(_ id: UUID) {

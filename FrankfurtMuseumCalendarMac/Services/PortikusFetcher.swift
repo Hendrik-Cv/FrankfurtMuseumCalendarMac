@@ -6,29 +6,27 @@ final class PortikusFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFet
     override func fetchExhibitions() async throws -> [Exhibition] {
         let listHTML = try await HTMLFetcher.fetchHTML(from: museum.exhibitionsURL)
         let currentYear = Calendar.current.component(.year, from: Date())
-        let tableBlocks = HTMLFetcher.allCaptures(
-            pattern: #"<div class="exhibition-table">([\s\S]*?)(?=<div class="exhibition-table">|$)"#,
-            in: listHTML)
-        struct Entry { let slug: String; let artist: String; let title: String }
+        // Site redesign (2026-10): listing is now a flat run of
+        // <a class="preview-exhibition" itemtype=".../ExhibitionEvent">…</a> cards,
+        // each carrying its own year — no more per-year table wrapper to split on.
+        let cardBlocks = HTMLFetcher.allCaptures(
+            pattern: #"<a href="(/de/exhibitions/[^"]+)" class="preview-exhibition"[\s\S]*?</a>"#,
+            in: listHTML, group: 0)
+        struct Entry { let slug: String; let title: String }
         var entries: [Entry] = []
-        for block in tableBlocks {
-            let yearStr = HTMLFetcher.allCaptures(
-                pattern: #"item-year td[^>]*>\s*(\d{4})"#, in: block).first ?? ""
-            guard let year = Int(yearStr), year >= currentYear - 1 else { continue }
-            guard let rowRegex = try? NSRegularExpression(
-                pattern: #"data-href="(/de/exhibitions/[^"]+)"[\s\S]*?item-artist[^>]*>([\s\S]{3,200}?)</div>[\s\S]*?item-title[^>]*>\s*<a[^>]*>([^<]+)</a>"#,
-                options: []) else { continue }
-            let ns = block as NSString
-            for m in rowRegex.matches(in: block, range: NSRange(location: 0, length: ns.length)) {
-                guard m.numberOfRanges > 3 else { continue }
-                let slug   = ns.substring(with: m.range(at: 1))
-                let artist = HTMLFetcher.stripHTML(ns.substring(with: m.range(at: 2)))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let exTitle = ns.substring(with: m.range(at: 3))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = artist.isEmpty ? exTitle : "\(artist): \(exTitle)"
-                entries.append(Entry(slug: slug, artist: artist, title: title))
-            }
+        for block in cardBlocks {
+            guard let slug = HTMLFetcher.allCaptures(pattern: #"href="([^"]+)""#, in: block).first,
+                  let yearStr = HTMLFetcher.allCaptures(
+                    pattern: #"preview-exhibition__year">\s*(\d{4})"#, in: block).first,
+                  let year = Int(yearStr), year >= currentYear - 1 else { continue }
+            let artists = HTMLFetcher.allCaptures(pattern: #"itemprop="artist">([^<]*)</span>"#, in: block)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .joined(separator: ", ")
+            guard let exTitle = HTMLFetcher.allCaptures(pattern: #"itemprop="title">([^<]*)</span>"#, in: block)
+                    .first?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !exTitle.isEmpty else { continue }
+            let title = artists.isEmpty ? exTitle : "\(artists): \(exTitle)"
+            entries.append(Entry(slug: slug, title: title))
         }
         guard !entries.isEmpty else { throw FetcherError.noExhibitionsFound }
         let museum = self.museum
@@ -39,13 +37,11 @@ final class PortikusFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFet
                 group.addTask {
                     guard let pageURL = URL(string: "https://www.portikus.de\(entry.slug)"),
                           let html = try? await HTMLFetcher.fetchHTML(from: pageURL) else { return nil }
-                    guard let infoBlock = HTMLFetcher.allCaptures(
-                            pattern: #"wrap-exhibitons-info[^>]*>([\s\S]{0,400}?)</div>"#,
-                            in: html).first,
-                          let rawDate = HTMLFetcher.allCaptures(
-                            pattern: #"<p>(\d{1,2}\.\d{1,2}\.[\s\S]{3,20}?)</p>"#,
-                            in: infoBlock).first else { return nil }
-                    guard let (start, end) = Self.parsePortikusDate(rawDate),
+                    // Date range now sits right after the article number, e.g.
+                    // <span class="article-number">#245</span>  03.10.2026–03.01.2027
+                    guard let rawDate = HTMLFetcher.allCaptures(
+                            pattern: #"article-number">#\d+</span>\s*([^<]+)"#, in: html).first,
+                          let (start, end) = Self.parsePortikusDate(rawDate),
                           end >= cutoff else { return nil }
                     let desc: String? = HTMLFetcher.allCaptures(
                         pattern: #"<p[^>]*>([\s\S]{80,2000}?)</p>"#, in: html)
@@ -75,14 +71,13 @@ final class PortikusFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFet
         let homeHTML = try await HTMLFetcher.fetchHTML(from: URL(string: "https://www.portikus.de/de/")!)
         let cutoff = Calendar.current.date(byAdding: .hour, value: -2, to: Date())!
 
-        // Collect URLs of current exhibitions from homepage news items
-        let items = HTMLFetcher.allCaptures(
-            pattern: #"<div\s+class="news-item">([\s\S]{30,1000}?)</div>\s*</div>"#, in: homeHTML)
+        // Only genuinely current exhibitions are linked from the homepage ("Aktuell");
+        // archive/permanent homeitems use a non-linking JS-toggle div instead of <a href>.
+        let hrefs = HTMLFetcher.allCaptures(
+            pattern: #"<a href="(/de/exhibitions/[^"]+)" class="homeitem-title">"#, in: homeHTML)
         var exhibitionURLs: [URL] = []
-        for item in items {
-            guard let href = extractFirst(
-                pattern: #"href="(https://www\.portikus\.de/de/exhibitions/[^"]+)""#, in: item),
-                  let url = URL(string: href) else { continue }
+        for href in hrefs {
+            guard let url = URL(string: "https://www.portikus.de\(href)") else { continue }
             exhibitionURLs.append(url)
         }
         guard !exhibitionURLs.isEmpty else { return [] }
@@ -101,34 +96,34 @@ final class PortikusFetcher: GenericMuseumFetcher, @unchecked Sendable, EventFet
 
         var events: [MuseumEvent] = []
         for (pageURL, html) in pages {
-            guard let infoBlock = extractFirst(
-                pattern: #"wrap-exhibitons-info[^>]*>([\s\S]{0,800}?)</div>"#, in: html) else { continue }
-            // Skip exhibitions that have already ended
+            // Skip exhibitions that have already ended. Date range sits right after the
+            // article number, e.g. <span class="article-number">#245</span>  03.10.2026–03.01.2027
             guard let dateRangeStr = extractFirst(
-                pattern: #"<p>(\d{1,2}\.\d{1,2}\.[\s\S]{3,25}?)</p>"#, in: infoBlock),
+                    pattern: #"article-number">#\d+</span>\s*([^<]+)"#, in: html),
                   let (_, endDate) = Self.parsePortikusDate(dateRangeStr),
                   endDate >= cutoff else { continue }
+            let fallbackYear = Calendar.current.component(.year, from: endDate)
 
             let exhibTitle = extractFirst(pattern: #"<title>([^<]+)</title>"#, in: html)?
                 .replacingOccurrences(of: " - Portikus Frankfurt", with: "")
+                .replacingOccurrences(of: #"^#\d+\s*"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            events.append(contentsOf: parseInfoBlockEvents(infoBlock, pageURL: pageURL, exhibTitle: exhibTitle, cutoff: cutoff))
+            events.append(contentsOf: parseInfoBlockEvents(
+                html, pageURL: pageURL, exhibTitle: exhibTitle, fallbackYear: fallbackYear, cutoff: cutoff))
         }
 
         return events.sorted { $0.date < $1.date }
     }
 
-    private func parseInfoBlockEvents(_ block: String, pageURL: URL, exhibTitle: String?, cutoff: Date) -> [MuseumEvent] {
-        let paras = HTMLFetcher.allCaptures(pattern: #"<p[^>]*>([\s\S]{3,400}?)</p>"#, in: block)
-        guard paras.count > 1 else { return [] }
-
-        // Fallback year from first para "DD.MM.–DD.MM.YYYY"
-        let fallbackYear = extractFirst(pattern: #"(20\d{2})"#, in: paras[0])
-            .flatMap { Int($0) } ?? Calendar.current.component(.year, from: Date())
+    // `html` is the full exhibition page; event announcements ("Eröffnung: …",
+    // "Open Rehearsals: …") are the only paragraphs tagged class="indent" on the page.
+    private func parseInfoBlockEvents(_ html: String, pageURL: URL, exhibTitle: String?, fallbackYear: Int, cutoff: Date) -> [MuseumEvent] {
+        let paras = HTMLFetcher.allCaptures(pattern: #"<p class="indent">([\s\S]{3,400}?)</p>"#, in: html)
+        guard !paras.isEmpty else { return [] }
 
         var events: [MuseumEvent] = []
-        for para in paras.dropFirst() {
+        for para in paras {
             let raw = HTMLFetcher.stripHTML(para)
                 .replacingOccurrences(of: "&amp;", with: "&")
                 .trimmingCharacters(in: .whitespacesAndNewlines)

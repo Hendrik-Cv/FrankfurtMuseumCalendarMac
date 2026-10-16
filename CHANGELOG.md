@@ -2,7 +2,7 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 
-## [Unreleased] – 2026-10-16
+## [1.0] – 2026-10-16
 
 ### Fixed
 - **Portikus-Fetcher repariert**: portikus.de hat im Oktober 2026 ein komplettes Redesign bekommen (neue Klassen für Listing, Detailseiten und Startseite). Der alte Scraper lieferte dadurch weder Ausstellungen noch Events. Listing- und Detailseiten-Parsing wurden an die neue Markup-Struktur angepasst und live gegen die echte Website verifiziert.

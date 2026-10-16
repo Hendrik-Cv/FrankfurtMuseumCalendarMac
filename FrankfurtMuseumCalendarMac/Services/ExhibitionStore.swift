@@ -117,14 +117,18 @@ final class ExhibitionStore {
         }
         availableEventTypes = Array(Set(allList.map { $0.eventType })).sorted()
 
-        // Series info
+        // Series info — computed over all upcoming events for the selected museums,
+        // independent of eventTimeRange/type/favorites filters, so a recurring event
+        // keeps listing its other dates even when a narrow window like "Heute" is active.
+        let todayStart = cal.startOfDay(for: now)
+        let seriesPool = events.filter { selectedMuseumIDs.contains($0.museum.id) && $0.date >= todayStart }
         var groups: [String: [MuseumEvent]] = [:]
-        for event in filteredEvents {
+        for event in seriesPool {
             let key = "\(event.museum.id)|\(event.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
             groups[key, default: []].append(event)
         }
         var result: [MuseumEvent.ID: EventSeriesInfo] = [:]
-        for event in filteredEvents {
+        for event in seriesPool {
             let key = "\(event.museum.id)|\(event.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
             let sibs = (groups[key] ?? []).filter { $0.id != event.id }
             result[event.id] = EventSeriesInfo(siblingCount: sibs.count, siblings: sibs)

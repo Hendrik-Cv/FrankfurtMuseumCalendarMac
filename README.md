@@ -36,10 +36,14 @@ Eine macOS-App, die aktuelle Ausstellungen und Veranstaltungen aus Frankfurter M
 | Senckenberg Naturmuseum Frankfurt | Naturkunde & Wissenschaft |
 | Museum für Kommunikation Frankfurt (MfK) | Kommunikation |
 
+## Download
+
+Fertige Builds gibt es auf der [Releases-Seite](https://github.com/Hendrik-Cv/FrankfurtMuseumCalendarMac/releases) als `.dmg`. Die App ist nur ad-hoc signiert (kein Apple Developer-Zertifikat) – beim ersten Start ggf. über Rechtsklick → „Öffnen" bestätigen, da Gatekeeper sonst warnt.
+
 ## Voraussetzungen
 
-- macOS 15 oder neuer
-- Xcode 16 oder neuer
+- macOS 26 oder neuer
+- Xcode 26 oder neuer (Swift 6 Language Mode)
 
 ## Bauen & Starten
 
@@ -50,6 +54,8 @@ open FrankfurtMuseumCalendarMac.xcodeproj
 ```
 
 Dann in Xcode `⌘R` drücken. Die App lädt beim ersten Start automatisch alle Ausstellungen und Veranstaltungen.
+
+Änderungen an bestehenden Versionen stehen im [Changelog](CHANGELOG.md).
 
 ## Architektur
 
